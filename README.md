@@ -71,3 +71,34 @@ To match the original 384 dimensions schema of the placeholder embeddings (apply
 - `--force-restart`: Ignores existing progress and restarts generation from scratch.
 
 ---
+
+## Cost-aware Majority Voting (CaMVo) Pipeline
+
+We have implemented the online CaMVo annotation loop in `camvo.py` and a separate simulation execution script in `run_simulation.py`.
+
+### Code Implementation Details
+
+1. **`camvo.py`**:
+   - **`CaMVoEstimator`**: An object-oriented class that manages the online state of LLMs (GPT-4o, Claude-3-Haiku, Gemini-Flash, LLaMA-3).
+     - Maintains LinUCB matrices $A_i$ and vectors $b_i$ for contextual correctness probability estimation.
+     - Maintains Beta distribution parameters ($\alpha_{i,h}$, $\beta_{i,h}$) for success and failure likelihoods, updated dynamically using the Method of Moments.
+   - **Confidence Estimation (`estimate_confidence`)**: Computes the Lower Confidence Bound (LCB) $\theta_{i,t}$ using LinUCB, passes it through a Laplace-smoothed Bayesian Beta posterior to find the confidence $L_{i,t}$, and computes expected correctness weights $\omega_{i,t}$ for majority voting.
+   - **Greedy Oracle Selection (`run_oracle`)**: Sorts LLMs by cost and dynamically finds the cheapest subset of LLMs satisfying:
+     $$\text{Confidence}(\mathcal{A}) \ge \delta \cdot \text{Confidence}(\mathcal{ALL})$$
+     Enforcing a minimum of $k_{min}$ models. Uses a Beta CDF approximation to calculate subset confidence.
+   - **Main Annotation Loop (`run_annotation_loop`)**: Iterates through titles and embeddings, fetches LCBs, queries selected LLMs via a callback, aggregates results using `fuzzy_majority_vote` (medoid similarity), calculates Token F1 rewards, and updates parameters.
+
+2. **`run_simulation.py`**:
+   - Implements simulation setup, generating synthetic product titles/embeddings or reading the real generated embeddings CSV file (`products_with_embeddings.csv`).
+   - Defines a mock LLM querying function that simulates model accuracy based on embedding features (contextual routing).
+   - Instantiates `CaMVoEstimator` and executes `run_annotation_loop`.
+
+### Running the CaMVo Simulation
+
+To execute the simulation:
+```bash
+./venv/bin/python run_simulation.py
+```
+
+If the generated `products_with_embeddings.csv` exists in the workspace, it will automatically load the real listings and 768-dimensional embeddings to run the online loop. Otherwise, it will automatically generate a synthetic dataset to run the simulation.
+
